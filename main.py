@@ -8,7 +8,6 @@ from loguru import logger
 from dotenv import load_dotenv
 from XianyuApis import XianyuApis
 
-
 from utils.xianyu_utils import generate_mid, generate_uuid, trans_cookies, generate_device_id, decrypt
 from XianyuAgent import XianyuReplyBot
 from context_manager import ChatContextManager
@@ -24,10 +23,10 @@ class XianyuLive:
         self.myid = self.cookies['unb']
         self.device_id = generate_device_id(self.myid)
         self.context_manager = ChatContextManager()
-        
+
         # 心跳相关配置
         self.heartbeat_interval = 15  # 心跳间隔15秒
-        self.heartbeat_timeout = 5    # 心跳超时5秒
+        self.heartbeat_timeout = 5  # 心跳超时5秒
         self.last_heartbeat_time = 0
         self.last_heartbeat_response = 0
         self.heartbeat_task = None
@@ -108,12 +107,12 @@ class XianyuLive:
         """判断是否为用户聊天消息"""
         try:
             return (
-                isinstance(message, dict) 
-                and "1" in message 
-                and isinstance(message["1"], dict)  # 确保是字典类型
-                and "10" in message["1"]
-                and isinstance(message["1"]["10"], dict)  # 确保是字典类型
-                and "reminderContent" in message["1"]["10"]
+                    isinstance(message, dict)
+                    and "1" in message
+                    and isinstance(message["1"], dict)  # 确保是字典类型
+                    and "10" in message["1"]
+                    and isinstance(message["1"]["10"], dict)  # 确保是字典类型
+                    and "reminderContent" in message["1"]["10"]
             )
         except Exception:
             return False
@@ -122,11 +121,11 @@ class XianyuLive:
         """判断是否为同步包消息"""
         try:
             return (
-                isinstance(message_data, dict)
-                and "body" in message_data
-                and "syncPushPackage" in message_data["body"]
-                and "data" in message_data["body"]["syncPushPackage"]
-                and len(message_data["body"]["syncPushPackage"]["data"]) > 0
+                    isinstance(message_data, dict)
+                    and "body" in message_data
+                    and "syncPushPackage" in message_data["body"]
+                    and "data" in message_data["body"]["syncPushPackage"]
+                    and len(message_data["body"]["syncPushPackage"]["data"]) > 0
             )
         except Exception:
             return False
@@ -135,14 +134,14 @@ class XianyuLive:
         """判断是否为用户正在输入状态消息"""
         try:
             return (
-                isinstance(message, dict)
-                and "1" in message
-                and isinstance(message["1"], list)
-                and len(message["1"]) > 0
-                and isinstance(message["1"][0], dict)
-                and "1" in message["1"][0]
-                and isinstance(message["1"][0]["1"], str)
-                and "@goofish" in message["1"][0]["1"]
+                    isinstance(message, dict)
+                    and "1" in message
+                    and isinstance(message["1"], list)
+                    and len(message["1"]) > 0
+                    and isinstance(message["1"][0], dict)
+                    and "1" in message["1"][0]
+                    and isinstance(message["1"][0]["1"], str)
+                    and "@goofish" in message["1"][0]["1"]
             )
         except Exception:
             return False
@@ -176,7 +175,7 @@ class XianyuLive:
 
             # 获取并解密数据
             sync_data = message_data["body"]["syncPushPackage"]["data"][0]
-            
+
             # 检查是否有必要的字段
             if "data" not in sync_data:
                 logger.debug("同步包中无data字段")
@@ -233,23 +232,23 @@ class XianyuLive:
             send_user_name = message["1"]["10"]["reminderTitle"]
             send_user_id = message["1"]["10"]["senderUserId"]
             send_message = message["1"]["10"]["reminderContent"]
-            
+
             # 时效性验证（过滤5分钟前消息）
             if (time.time() * 1000 - create_time) > 300000:
                 logger.debug("过期消息丢弃")
                 return
-                
+
             if send_user_id == self.myid:
                 logger.debug("过滤自身消息")
                 return
-                
+
             url_info = message["1"]["10"]["reminderUrl"]
             item_id = url_info.split("itemId=")[1].split("&")[0] if "itemId=" in url_info else None
-            
+
             if not item_id:
                 logger.warning("无法获取商品ID")
                 return
-            
+
             # 从数据库中获取商品信息，如果不存在则从API获取并保存
             item_info = self.context_manager.get_item_info(item_id)
             if not item_info:
@@ -264,36 +263,36 @@ class XianyuLive:
                     return
             else:
                 logger.info(f"从数据库获取商品信息: {item_id}")
-                
+
             item_description = f"{item_info['desc']};当前商品售卖价格为:{str(item_info['soldPrice'])}"
             logger.info(f"user: {send_user_name}, 发送消息: {send_message}")
-            
+
             # 添加用户消息到上下文
             self.context_manager.add_message(send_user_id, item_id, "user", send_message)
-            
+
             # 获取完整的对话上下文
             context = self.context_manager.get_context(send_user_id, item_id)
-            
+
             # 生成回复
             bot_reply = bot.generate_reply(
                 send_message,
                 item_description,
                 context=context
             )
-            
+
             # 检查是否为价格意图，如果是则增加议价次数
             if bot.last_intent == "price":
                 self.context_manager.increment_bargain_count(send_user_id, item_id)
                 bargain_count = self.context_manager.get_bargain_count(send_user_id, item_id)
                 logger.info(f"用户 {send_user_name} 对商品 {item_id} 的议价次数: {bargain_count}")
-            
+
             # 添加机器人回复到上下文
             self.context_manager.add_message(send_user_id, item_id, "assistant", bot_reply)
-            
+
             logger.info(f"机器人回复: {bot_reply}")
             cid = message["1"]["2"].split('@')[0]
             await self.send_msg(websocket, cid, send_user_id, bot_reply)
-            
+
         except Exception as e:
             logger.error(f"处理消息时发生错误: {str(e)}")
             logger.debug(f"原始消息: {message_data}")
@@ -321,16 +320,16 @@ class XianyuLive:
         while True:
             try:
                 current_time = time.time()
-                
+
                 # 检查是否需要发送心跳
                 if current_time - self.last_heartbeat_time >= self.heartbeat_interval:
                     await self.send_heartbeat(ws)
-                
+
                 # 检查上次心跳响应时间，如果超时则认为连接已断开
                 if (current_time - self.last_heartbeat_response) > (self.heartbeat_interval + self.heartbeat_timeout):
                     logger.warning("心跳响应超时，可能连接已断开")
                     break
-                
+
                 await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"心跳循环出错: {e}")
@@ -340,11 +339,11 @@ class XianyuLive:
         """处理心跳响应"""
         try:
             if (
-                isinstance(message_data, dict)
-                and "headers" in message_data
-                and "mid" in message_data["headers"]
-                and "code" in message_data
-                and message_data["code"] == 200
+                    isinstance(message_data, dict)
+                    and "headers" in message_data
+                    and "mid" in message_data["headers"]
+                    and "code" in message_data
+                    and message_data["code"] == 200
             ):
                 self.last_heartbeat_response = time.time()
                 logger.debug("收到心跳响应")
@@ -371,22 +370,22 @@ class XianyuLive:
                 async with websockets.connect(self.base_url, extra_headers=headers) as websocket:
                     self.ws = websocket
                     await self.init(websocket)
-                    
+
                     # 初始化心跳时间
                     self.last_heartbeat_time = time.time()
                     self.last_heartbeat_response = time.time()
-                    
+
                     # 启动心跳任务
                     self.heartbeat_task = asyncio.create_task(self.heartbeat_loop(websocket))
-                    
+
                     async for message in websocket:
                         try:
                             message_data = json.loads(message)
-                            
+
                             # 处理心跳响应
                             if await self.handle_heartbeat_response(message_data):
                                 continue
-                            
+
                             # 发送通用ACK响应
                             if "headers" in message_data and "mid" in message_data["headers"]:
                                 ack = {
@@ -401,10 +400,10 @@ class XianyuLive:
                                     if key in message_data["headers"]:
                                         ack["headers"][key] = message_data["headers"][key]
                                 await websocket.send(json.dumps(ack))
-                            
+
                             # 处理其他消息
                             await self.handle_message(message_data, websocket)
-                                
+
                         except json.JSONDecodeError:
                             logger.error("消息解析失败")
                         except Exception as e:
@@ -420,7 +419,7 @@ class XianyuLive:
                     except asyncio.CancelledError:
                         pass
                 await asyncio.sleep(5)  # 等待5秒后重连
-                
+
             except Exception as e:
                 logger.error(f"连接发生错误: {e}")
                 if self.heartbeat_task:
@@ -433,7 +432,7 @@ class XianyuLive:
 
 
 if __name__ == '__main__':
-    #加载环境变量 cookie
+    # 加载环境变量 cookie
     load_dotenv()
     cookies_str = os.getenv("COOKIES_STR")
     bot = XianyuReplyBot()
